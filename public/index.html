@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Healthcare Translation MVP</title>
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(to right, #e0e7ff, #f8fafc);
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    h1 {
+      color: #0d6efd;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .card {
+      border-radius: 20px;
+      backdrop-filter: blur(10px);
+      background: rgba(255, 255, 255, 0.7);
+      box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+
+    .transcript-box {
+      height: 200px;
+      overflow-y: auto;
+      padding: 15px;
+      border-radius: 15px;
+      background: rgba(255, 255, 255, 0.8);
+      box-shadow: inset 0 0 5px rgba(0,0,0,0.05);
+    }
+
+    .btn {
+      transition: transform 0.2s, box-shadow 0.2s;
+      min-width: 120px;
+      margin-bottom: 10px;
+    }
+
+    .btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 15px rgba(0,0,0,0.2);
+    }
+
+    textarea { resize: none; }
+
+    @media (max-width: 768px) {
+      .transcript-box { height: 180px; }
+      .btn, select { width: 100%; }
+    }
+
+    @media (max-width: 480px) {
+      .transcript-box { height: 150px; }
+      textarea { font-size: 14px; }
+      h1 { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Healthcare Translation MVP</h1>
+
+    <!-- Input Mode Selection -->
+    <div class="mb-3">
+      <label class="form-label">Select Input Method:</label>
+      <div class="form-check form-check-inline">
+        <input class="form-check-input" type="radio" name="inputMode" id="textMode" value="text" checked>
+        <label class="form-check-label" for="textMode">Text Input</label>
+      </div>
+      <div class="form-check form-check-inline">
+        <input class="form-check-input" type="radio" name="inputMode" id="voiceMode" value="voice">
+        <label class="form-check-label" for="voiceMode">Voice Input</label>
+      </div>
+    </div>
+
+    <!-- Text Input -->
+    <div class="mb-3" id="textInputContainer">
+      <label for="textInput" class="form-label">Type Text</label>
+      <textarea id="textInput" class="form-control" rows="4" placeholder="Type text here..."></textarea>
+    </div>
+
+    <!-- Voice Input Buttons -->
+    <div class="d-flex flex-wrap gap-2 mb-4" id="voiceButtons" style="display:none;">
+      <button id="startVoiceBtn" class="btn btn-success">Start Voice</button>
+      <button id="stopVoiceBtn" class="btn btn-danger">Stop Voice</button>
+    </div>
+
+    <!-- Language Selection -->
+    <div class="row g-3 mb-3">
+      <div class="col-6">
+        <label for="sourceLang" class="form-label">From</label>
+        <select id="sourceLang" class="form-select">
+          <option value="en" selected>English</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="de">German</option>
+        </select>
+      </div>
+      <div class="col-6">
+        <label for="targetLang" class="form-label">To</label>
+        <select id="targetLang" class="form-select">
+          <option value="es" selected>Spanish</option>
+          <option value="en">English</option>
+          <option value="fr">French</option>
+          <option value="de">German</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Translate / Speak Buttons -->
+    <div class="d-flex flex-wrap gap-2 mb-4">
+      <button id="sendTextBtn" class="btn btn-primary">Translate Text</button>
+      <button id="speakBtn" class="btn btn-warning">Speak Translation</button>
+      <button id="clearBtn" class="btn btn-secondary">Clear Transcripts</button>
+    </div>
+    
+    <div id="loader" class="text-center my-3" style="display:none;">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+    <p>Translating...</p>
+    </div>
+
+    <!-- Transcripts -->
+    <div class="card p-3">
+      <h5 class="text-primary mb-2">Original Transcript</h5>
+      <div class="transcript-box" id="originalText"></div>
+    </div>
+
+    <div class="card p-3">
+      <h5 class="text-success mb-2">Translated Transcript</h5>
+      <div class="transcript-box" id="translatedText"></div>
+    </div>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+  const textInput = document.getElementById("textInput");
+  const sendTextBtn = document.getElementById("sendTextBtn");
+  const startVoiceBtn = document.getElementById("startVoiceBtn");
+  const stopVoiceBtn = document.getElementById("stopVoiceBtn");
+  const speakBtn = document.getElementById("speakBtn");
+  const clearBtn = document.getElementById("clearBtn");
+  const originalTextDiv = document.getElementById("originalText");
+  const translatedTextDiv = document.getElementById("translatedText");
+  const sourceLangSelect = document.getElementById("sourceLang");
+  const targetLangSelect = document.getElementById("targetLang");
+  const loader = document.getElementById("loader");
+
+  let recognition;
+  let finalTranscript = "";
+
+  // --- Initialize SpeechRecognition with robust error handling ---
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = true;
+
+    recognition.onresult = async (event) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          await processText(transcript);
+        } else {
+          interim += transcript;
+          originalTextDiv.innerText = finalTranscript + interim;
+        }
+      }
+    };
+
+    recognition.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "permission-denied") {
+        alert("Microphone access denied. Please allow access to use voice input.");
+      } else if (e.error === "no-speech") {
+        alert("No speech detected. Please try again.");
+      } else {
+        alert("Speech recognition error: " + e.error);
+      }
+      console.error("Speech recognition error:", e.error);
+    };
+  } else {
+    alert("Sorry, your browser does not support voice input. Please use text input instead.");
+    startVoiceBtn.disabled = true;
+    stopVoiceBtn.disabled = true;
+  }
+
+  // --- Event listeners ---
+  sendTextBtn.addEventListener("click", () => processText(textInput.value));
+  speakBtn.addEventListener("click", () => speakText(translatedTextDiv.innerText));
+  startVoiceBtn.addEventListener("click", () => recognition && recognition.start());
+  stopVoiceBtn.addEventListener("click", () => recognition && recognition.stop());
+  clearBtn.addEventListener("click", () => {
+    originalTextDiv.innerHTML = "";
+    translatedTextDiv.innerHTML = "";
+    finalTranscript = "";
+  });
+
+  // --- Process text (text or voice) ---
+  async function processText(text) {
+    if (!text.trim()) return;
+
+    if (textInput.value) textInput.value = "";
+
+    const sourceLang = sourceLangSelect.value;
+    const targetLang = targetLangSelect.value;
+
+    try {
+      loader.style.display = "block";
+
+      const res = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, sourceLang, targetLang })
+      });
+
+      const data = await res.json();
+
+      loader.style.display = "none";
+
+      if (!res.ok) {
+        alert(data.error || "Translation failed. Please try again.");
+        return;
+      }
+
+      // Append corrected original text (Gemini spellings) line by line
+      const originalLine = document.createElement("div");
+      originalLine.textContent = data.correctedText || text;
+      originalTextDiv.appendChild(originalLine);
+
+      // Append translation line by line
+      const translatedLine = document.createElement("div");
+      translatedLine.textContent = data.translatedText || "";
+      translatedTextDiv.appendChild(translatedLine);
+
+      // Update final transcript for interim voice display
+      finalTranscript += (data.correctedText || text) + " ";
+
+    } catch (err) {
+      loader.style.display = "none";
+      alert("Network or server error: " + err.message);
+    }
+  }
+
+  // --- Speak translated text ---
+  function speakText(text) {
+    if (!text) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = targetLangSelect.value === "es" ? "es-ES" : targetLangSelect.value + "-" + targetLangSelect.value.toUpperCase();
+    speechSynthesis.speak(utterance);
+  }
+</script>
+
+</body>
+</html>
