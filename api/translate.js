@@ -45,19 +45,25 @@ Text:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Gemini API error:", response.status, errorText);
+        throw new Error("Gemini API call failed.");
+      }
 
       const result = await response.json();
 
       if (result.candidates && result.candidates.length > 0) {
         const jsonText = result.candidates[0].content.parts[0].text;
         const parsedJson = JSON.parse(jsonText);
-        return parsedJson.is_convo !== false; // loose fallback
+        return { is_convo: parsedJson.is_convo !== false, corrected_text: parsedJson.corrected_text };
       } else {
-        return true; // fallback
+        return { is_convo: true, corrected_text: text };
       }
     } catch (err) {
       console.error("Gemini error:", err.message);
-      return true; // fallback
+      return { is_convo: true, corrected_text: text };
     }
   }
 
@@ -65,11 +71,16 @@ Text:
   async function translateText(text, sourceLang, targetLang) {
     const model = `Helsinki-NLP/opus-mt-${sourceLang}-${targetLang}`;
     const url = `https://api-inference.huggingface.co/models/${model}`;
+    const hfApiKey = process.env.HF_API_KEY;
+    
+    if (!hfApiKey) {
+      throw new Error("Hugging Face API key not found.");
+    }
 
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${process.env.HF_API_KEY}`,
+        "Authorization": `Bearer ${hfApiKey}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ inputs: text })
@@ -86,16 +97,16 @@ Text:
 
   // --- Main handler ---
   try {
-    const isConvo = await isDoctorPatientConvo(text);
+    const geminiResult = await isDoctorPatientConvo(text);
 
-    if (!isConvo) {
+    if (!geminiResult.is_convo) {
       return res.status(400).json({
         error: "Text is not a valid doctor-patient conversation."
       });
     }
 
-    const translatedText = await translateText(text, sourceLang, targetLang);
-    res.status(200).json({ translatedText });
+    const translatedText = await translateText(geminiResult.corrected_text, sourceLang, targetLang);
+    res.status(200).json({ translatedText, correctedText: geminiResult.corrected_text });
   } catch (err) {
     console.error("Error:", err.message);
     res.status(500).json({ error: err.message });
